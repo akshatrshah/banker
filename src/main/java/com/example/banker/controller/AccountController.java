@@ -40,57 +40,87 @@ public class AccountController {
         return ResponseEntity.ok(account);
     }
 
-    // ✅ Get account by accountId (query param)
     @GetMapping
     public ResponseEntity<Account> getById(@RequestParam Long accountId) {
-        return accountService.getById(accountId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+
+        Optional<Account> accountOpt = accountService.getById(accountId);
+        if (accountOpt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Account account = accountOpt.get();
+
+        if (!account.getUser().getName().equals(username)) {
+            return ResponseEntity.status(403).build(); // Forbidden
+        }
+
+        return ResponseEntity.ok(account);
     }
 
     // ✅ Deposit money (query params: accountId, amount)
     @PostMapping("/deposit")
     public ResponseEntity<String> deposit(@RequestParam Long accountId, @RequestParam BigDecimal amount) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+
         Optional<Account> accountOpt = accountService.getById(accountId);
         if (accountOpt.isEmpty()) return ResponseEntity.badRequest().body("Account not found");
 
         Account account = accountOpt.get();
+
+        if (!account.getUser().getName().equals(username)) {
+            return ResponseEntity.status(403).body("Unauthorized to deposit to this account");
+        }
+
         account.setBalance(account.getBalance().add(amount));
         accountService.updateBalance(account, account.getBalance());
-
-        transactionService.logTransaction(account, amount, "DEPOSIT"); // ✅ Log transaction
 
         return ResponseEntity.ok("Deposited successfully");
     }
 
     // ✅ Withdraw money (query params: accountId, amount)
+
     @PostMapping("/withdraw")
     public ResponseEntity<String> withdraw(@RequestParam Long accountId, @RequestParam BigDecimal amount) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+    
         Optional<Account> accountOpt = accountService.getById(accountId);
         if (accountOpt.isEmpty()) return ResponseEntity.badRequest().body("Account not found");
-
+    
         Account account = accountOpt.get();
+    
+        if (!account.getUser().getName().equals(username)) {
+            return ResponseEntity.status(403).body("Unauthorized to withdraw from this account");
+        }
+    
         if (account.getBalance().compareTo(amount) < 0)
             return ResponseEntity.badRequest().body("Insufficient balance");
-
+    
         account.setBalance(account.getBalance().subtract(amount));
         accountService.updateBalance(account, account.getBalance());
-
-        transactionService.logTransaction(account, amount, "WITHDRAW"); // ✅ Log transaction
-
+    
         return ResponseEntity.ok("Withdrawn successfully");
     }
 
     // ✅ Transfer money (query params: fromId, toId, amount)
     @PostMapping("/transfer")
     public ResponseEntity<String> transfer(@RequestParam Long fromId,
-                                           @RequestParam Long toId,
-                                           @RequestParam BigDecimal amount) {
+                                        @RequestParam Long toId,
+                                        @RequestParam BigDecimal amount) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+
         Optional<Account> fromOpt = accountService.getById(fromId);
         Optional<Account> toOpt = accountService.getById(toId);
         if (fromOpt.isEmpty() || toOpt.isEmpty()) return ResponseEntity.badRequest().body("Invalid account");
 
         Account from = fromOpt.get();
+
+        if (!from.getUser().getName().equals(username)) {
+            return ResponseEntity.status(403).body("Unauthorized to transfer from this account");
+        }
+
         Account to = toOpt.get();
 
         if (from.getBalance().compareTo(amount) < 0)
@@ -102,10 +132,7 @@ public class AccountController {
         accountService.updateBalance(from, from.getBalance());
         accountService.updateBalance(to, to.getBalance());
 
-        // ✅ Log both directions
-        transactionService.logTransaction(from, amount, "TRANSFER_OUT");
-        transactionService.logTransaction(to, amount, "TRANSFER_IN");
-
         return ResponseEntity.ok("Transfer successful");
     }
+
 }
